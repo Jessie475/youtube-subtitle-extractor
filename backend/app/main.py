@@ -23,7 +23,7 @@ app = FastAPI(title="YouTube Subtitle Extractor API", version="1.0.0")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Will be restricted to specific domains in production
+    allow_origins=["https://subtitles.kokonut.us.kg"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -3,7 +3,7 @@
 ## 架構概覽
 
 ```
-前端: kokonut.us.kg → Cloudflare Pages
+前端: subtitles.kokonut.us.kg → Cloudflare Pages
 API:  api.kokonut.us.kg → Render (Python FastAPI)
 ```
 
@@ -74,8 +74,10 @@ https://youtube-subtitle-extractor-api.onrender.com
 1. 在 Pages 項目設置中，找到 "Custom Domains"
 2. 添加自定義域名：
    ```
-   kokonut.us.kg/subtitles
+   subtitles.kokonut.us.kg
    ```
+
+   注意：Cloudflare Pages 自動設置 DNS 記錄，無需手動添加。
 
 ---
 
@@ -96,7 +98,7 @@ https://youtube-subtitle-extractor-api.onrender.com
 ```python
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://kokonut.us.kg", "https://api.kokonut.us.kg"],
+    allow_origins=["https://subtitles.kokonut.us.kg"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -122,7 +124,7 @@ routes = [
 ## 測試部署
 
 ### 測試前端
-訪問：`https://kokonut.us.kg/subtitles`
+訪問：`https://subtitles.kokonut.us.kg`
 
 ### 測試後端 API
 ```bash
@@ -178,10 +180,10 @@ curl https://api.kokonut.us.kg/health
 ### 添加新工具示例（圖片轉換）：
 ```
 kokonut.us.kg/
-├── /subtitles    ✅ 已有
-├── /image-converter
-├── /video-tools
-└── /docs
+├── subtitles.kokonut.us.kg    ✅ 已有
+├── image-converter.kokonut.us.kg
+├── video-tools.kokonut.us.kg
+└── docs.kokonut.us.kg
 ```
 
 ### 後端 API 路由：

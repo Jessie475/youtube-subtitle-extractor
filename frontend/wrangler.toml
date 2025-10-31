@@ -1,0 +1,19 @@
+name = "youtube-subtitle-extractor"
+type = "javascript"
+account_id = ""
+workers_dev = true
+route = ""
+zone_id = ""
+
+[env.production]
+name = "youtube-subtitle-extractor-prod"
+route = "kokonut.us.kg"
+zone_id = ""
+
+[build]
+command = "npm run build"
+cwd = "./frontend"
+watch_paths = ["frontend/src/**/*.{ts,tsx,js,jsx}"]
+
+[build.upload]
+format = "service-worker"

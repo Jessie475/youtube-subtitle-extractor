@@ -64,7 +64,17 @@ export default function SubtitleExtractor({ apiConnected }) {
           fetchResult(id)
         } else if (taskStatus === 'failed') {
           clearInterval(pollIntervalRef.current)
-          setError(statusResponse.data.message || '字幕提取失敗，請重試')
+          const errorMessage = statusResponse.data.message || '字幕提取失敗'
+
+          // Enhanced error message with helpful tips
+          let enhancedError = errorMessage
+          if (errorMessage.includes('bot') || errorMessage.includes('Sign in')) {
+            enhancedError = `${errorMessage}\n\n可能原因：\n• 影片有地區限制或需要登入\n• 影片設有年齡限制\n• 請嘗試其他公開影片`
+          } else if (errorMessage.includes('No subtitles')) {
+            enhancedError = `${errorMessage}\n\n提示：\n• 該影片可能沒有字幕\n• 確認影片有啟用字幕功能\n• 嘗試有中文或英文字幕的影片`
+          }
+
+          setError(enhancedError)
           setLoading(false)
         }
       } catch (err) {
@@ -151,7 +161,7 @@ export default function SubtitleExtractor({ apiConnected }) {
 
           {error && (
             <div className="p-4 bg-red-50 border border-red-300 rounded-lg">
-              <p className="text-sm text-red-700 font-medium">{error}</p>
+              <p className="text-sm text-red-700 font-medium whitespace-pre-line">{error}</p>
             </div>
           )}
 

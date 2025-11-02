@@ -240,7 +240,7 @@ curl https://api.kokonut.us.kg/health
 
 4. 如果使用免費層，第一次請求可能需要 30-50 秒啟動時間
 
-5. 確認 yt-dlp 版本 >= 2025.05.22（已在 requirements.txt 中指定）
+5. 確認 yt-dlp 版本 >= 2024.08.06（已在 requirements.txt 中指定）
 
 ### PO Token Provider 無回應
 

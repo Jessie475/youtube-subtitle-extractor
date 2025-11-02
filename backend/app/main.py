@@ -77,6 +77,7 @@ class SubtitleExtractor:
 
             # Enhanced yt-dlp options to avoid bot detection with PO Token provider
             pot_provider_url = os.getenv("POT_PROVIDER_URL", "http://localhost:4416")
+            logger.info(f"Using PO Token Provider at: {pot_provider_url}")
 
             ydl_opts = {
                 "skip_download": True,
@@ -84,6 +85,7 @@ class SubtitleExtractor:
                 "writeautomaticsub": True,
                 "quiet": False,
                 "no_warnings": False,
+                "verbose": True,  # Enable verbose logging to see plugin info
                 "subtitlesformat": "json3",
                 "socket_timeout": 30,
                 "extractor_args": {
@@ -96,6 +98,8 @@ class SubtitleExtractor:
                     }
                 }
             }
+
+            logger.info(f"yt-dlp config: {ydl_opts}")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)

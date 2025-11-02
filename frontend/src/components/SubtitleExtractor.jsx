@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react'
 import axios from 'axios'
+import { useRef, useState } from 'react'
 import Button from './Button'
 import ProgressBar from './ProgressBar'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_URL
 
 export default function SubtitleExtractor({ apiConnected }) {
   const [url, setUrl] = useState('')

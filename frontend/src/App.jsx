@@ -11,7 +11,7 @@ function App() {
     const checkHealth = async () => {
       try {
         await axios.get(
-          import.meta.env.VITE_API_URL || 'http://localhost:8000',
+          import.meta.env.VITE_API_URL ,
           { timeout: 5000 }
         )
         setApiConnected(true)

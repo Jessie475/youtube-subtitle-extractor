@@ -8,12 +8,11 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional
 import uuid
 import asyncio
-import re
 import logging
 from datetime import datetime
 from enum import Enum
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import TextFormatter
+import yt_dlp
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -62,23 +61,10 @@ class SubtitleResponse(BaseModel):
 
 
 class SubtitleExtractor:
-    """Helper class to extract subtitles from YouTube videos using YouTube Transcript API"""
+    """Helper class to extract subtitles from YouTube videos using yt-dlp"""
 
     def __init__(self):
         self.preferred_languages = ["zh-TW", "zh-CN", "zh", "en"]
-
-    def _extract_video_id(self, url: str) -> Optional[str]:
-        """Extract YouTube video ID from various URL formats"""
-        patterns = [
-            r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
-            r'youtube\.com\/watch\?.*v=([^&\n?#]+)',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                return match.group(1)
-        return None
 
     async def extract(self, url: str, language_preference: Optional[list[str]] = None) -> dict:
         """Extract subtitles from a YouTube video"""
@@ -88,83 +74,102 @@ class SubtitleExtractor:
         try:
             logger.info(f"Extracting subtitles from: {url}")
 
-            # Extract video ID
-            video_id = self._extract_video_id(url)
-            if not video_id:
-                return {"success": False, "error": "Invalid YouTube URL"}
-
-            logger.info(f"Video ID: {video_id}")
-
-            # Try to get transcript list
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-
-            # Try to find preferred language (manual subtitles first)
-            transcript = None
-            selected_language = None
-            is_auto_generated = False
-
-            # First, try manual subtitles in preferred languages
-            for lang in self.preferred_languages:
-                try:
-                    transcript = transcript_list.find_transcript([lang])
-                    selected_language = lang
-                    is_auto_generated = transcript.is_generated
-                    logger.info(f"Found manual subtitle in {lang}")
-                    break
-                except:
-                    continue
-
-            # If no manual subtitles, try auto-generated in preferred languages
-            if not transcript:
-                for lang in self.preferred_languages:
-                    try:
-                        transcript = transcript_list.find_generated_transcript([lang])
-                        selected_language = lang
-                        is_auto_generated = True
-                        logger.info(f"Found auto-generated subtitle in {lang}")
-                        break
-                    except:
-                        continue
-
-            # If still no transcript, get any available transcript
-            if not transcript:
-                try:
-                    # Get first available transcript
-                    for t in transcript_list:
-                        transcript = t
-                        selected_language = t.language_code
-                        is_auto_generated = t.is_generated
-                        logger.info(f"Using first available subtitle: {selected_language}")
-                        break
-                except:
-                    pass
-
-            if not transcript:
-                return {"success": False, "error": "No subtitles available for this video"}
-
-            # Fetch the actual transcript
-            transcript_data = transcript.fetch()
-
-            # Format the transcript
-            formatter = TextFormatter()
-            subtitle_text = formatter.format_transcript(transcript_data)
-
-            language_label = selected_language
-            if is_auto_generated:
-                language_label += " (Auto-generated)"
-
-            logger.info(f"Successfully extracted subtitles: {language_label}")
-
-            return {
-                "success": True,
-                "content": subtitle_text,
-                "language": language_label,
-                "title": f"Video {video_id}",  # Transcript API doesn't provide title
+            # Enhanced yt-dlp options to avoid bot detection
+            ydl_opts = {
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "quiet": False,
+                "no_warnings": False,
+                "subtitlesformat": "json3",
+                "socket_timeout": 30,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["ios", "android"],
+                        "skip": ["hls", "dash"]
+                    }
+                }
             }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+                subtitles = info.get("subtitles", {})
+                automatic_captions = info.get("automatic_captions", {})
+
+                subtitle_data = self._get_best_subtitles(subtitles, automatic_captions)
+
+                if subtitle_data:
+                    logger.info(f"Successfully extracted subtitles: {subtitle_data['language']}")
+                    return {
+                        "success": True,
+                        "content": subtitle_data["text"],
+                        "language": subtitle_data["language"],
+                        "title": info.get("title", "Unknown"),
+                    }
+                else:
+                    return {"success": False, "error": "No subtitles found for this video"}
 
         except Exception as e:
             logger.error(f"Error extracting subtitles: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    def _get_best_subtitles(self, subtitles: dict, automatic_captions: dict) -> Optional[dict]:
+        """Get the best available subtitles based on language preference"""
+        # Check manual subtitles first
+        for lang in self.preferred_languages:
+            if lang in subtitles:
+                return self._fetch_subtitle_content(subtitles[lang], lang)
+
+        # Check automatic captions
+        for lang in self.preferred_languages:
+            if lang in automatic_captions:
+                return self._fetch_subtitle_content(automatic_captions[lang], lang + " (Auto-generated)")
+
+        # Use first available
+        if subtitles:
+            lang = list(subtitles.keys())[0]
+            return self._fetch_subtitle_content(subtitles[lang], lang)
+
+        if automatic_captions:
+            lang = list(automatic_captions.keys())[0]
+            return self._fetch_subtitle_content(automatic_captions[lang], lang + " (Auto-generated)")
+
+        return None
+
+    def _fetch_subtitle_content(self, subtitle_list: list, language: str) -> Optional[dict]:
+        """Fetch and parse subtitle content"""
+        try:
+            if not subtitle_list:
+                return None
+
+            # JSON3 format
+            if subtitle_list[0]["ext"] == "json3":
+                response = requests.get(subtitle_list[0]["url"], timeout=10)
+                data = response.json()
+                text = ""
+                for event in data.get("events", []):
+                    if "segs" in event:
+                        for seg in event["segs"]:
+                            text += seg.get("utf8", "")
+                return {"text": text, "language": language}
+
+            # VTT or SRT format
+            else:
+                response = requests.get(subtitle_list[0]["url"], timeout=10)
+                content = response.text
+                lines = content.split("\n")
+                subtitle_text = []
+                for line in lines:
+                    # Skip empty lines, timestamps, and sequence numbers
+                    if line.strip() and "-->" not in line and not line.isdigit():
+                        subtitle_text.append(line.strip())
+
+                return {"text": "\n".join(subtitle_text), "language": language}
+
+        except Exception as e:
+            logger.error(f"Error fetching subtitle content: {e}")
+            return None
 
 
 def process_subtitle_extraction(task_id: str, url: str, language_preference: Optional[list[str]]):

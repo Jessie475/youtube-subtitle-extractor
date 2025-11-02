@@ -19,13 +19,13 @@ ERROR: [youtube] 7DOnMQAT_cU: Sign in to confirm you're not a bot. This helps pr
 
 ```diff
 - yt-dlp==2024.11.4
-+ yt-dlp>=2025.05.22
-+ bgutil-ytdlp-pot-provider>=2024.0.0
++ yt-dlp>=2024.08.06
++ bgutil-ytdlp-pot-provider>=1.2.0
 ```
 
 **說明**：
-- 升級 yt-dlp 到支援 PO Token 的版本
-- 添加 PO Token 提供器插件
+- 升級 yt-dlp 到支援 PO Token 的版本（>= 2024.08.06）
+- 添加 PO Token 提供器插件（最新版本 1.2.2）
 
 ### 2️⃣ 更新 Backend 配置
 

@@ -88,14 +88,22 @@ class SubtitleExtractor:
                 "verbose": True,  # Enable verbose logging to see plugin info
                 "subtitlesformat": "json3",
                 "socket_timeout": 30,
+                # Try web client first (more lenient)
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["ios", "android", "mweb"],
-                        "skip": ["hls", "dash"]
+                        "player_client": ["web", "mweb", "ios"],
+                        "skip": ["hls", "dash"],
+                        "player_skip": ["configs"]
                     },
                     "youtubepot-bgutilhttp": {
                         "base_url": pot_provider_url
                     }
+                },
+                # Add user agent to appear more like a browser
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                 }
             }
 

@@ -1,5 +1,22 @@
 # YouTube 字幕提取工具 - 部署指南
 
+## ⚠️ 重要更新：YouTube Bot Detection 修復方案 (2025)
+
+YouTube 現在需要 PO Token（Proof-of-Origin Token）來繞過機器人檢測。本專案已整合解決方案。
+
+### 新增服務架構：
+```
+前端: subtitles.kokonut.us.kg → Cloudflare Pages
+API:  api.kokonut.us.kg → Render (Python FastAPI)
+PO Token Provider: youtube-pot-provider → Render (Docker)  ← 新增
+```
+
+**必須先部署 PO Token Provider，否則會出現 "Sign in to confirm you're not a bot" 錯誤！**
+
+詳細說明見下方 **步驟 2.5：部署 PO Token Provider**
+
+---
+
 ## 架構概覽
 
 ```
@@ -46,6 +63,55 @@ https://youtube-subtitle-extractor-api.onrender.com
 ```
 
 記下這個 URL，稍後會用到。
+
+---
+
+### 2️⃣.5 **部署 PO Token Provider 到 Render** ⚠️ 必要步驟
+
+#### 為什麼需要這個服務？
+YouTube 在 2024-2025 開始強制要求 PO Token 來防止機器人，沒有這個服務會出現：
+```
+ERROR: [youtube] Sign in to confirm you're not a bot
+```
+
+#### Step A: 在 Render 上建立 Docker Web Service
+1. 訪問 https://dashboard.render.com/
+2. 點擊 "New +" → "Web Service"
+3. **選擇 "Deploy an existing image from a registry"**
+4. 配置基本資訊：
+   - **Image URL**: `brainicism/bgutil-ytdlp-pot-provider:latest`
+   - **Name**: `youtube-pot-provider`
+   - **Region**: 選擇與後端相同的地區（降低延遲）
+   - **Plan**: Free（建議升級到 $7/月以避免 cold start）
+5. 向下滾動到 **Advanced** 部分
+6. 添加環境變數（Environment Variables）：
+   - **Key**: `PORT`
+   - **Value**: `4416`
+7. 點擊 "Create Web Service"
+
+#### Step B: 等待部署完成
+部署完成後，你會得到類似這樣的 URL：
+```
+https://youtube-pot-provider.onrender.com
+```
+**記下這個 URL，下一步會用到！**
+
+#### Step C: 在後端服務添加環境變數
+1. 返回你的後端服務（`youtube-subtitle-extractor-api`）
+2. 進入 "Environment" 標籤
+3. 點擊 "Add Environment Variable"
+4. 添加：
+   - **Key**: `POT_PROVIDER_URL`
+   - **Value**: `https://youtube-pot-provider.onrender.com`（使用你的實際 URL）
+5. 保存後，後端會自動重新部署
+
+#### Step D: 驗證配置
+在後端的 logs 中，應該能看到：
+```
+INFO: Extracting subtitles from: https://www.youtube.com/watch?v=...
+[youtube] Extracting URL: ...
+```
+而不是 bot detection 錯誤。
 
 ---
 
@@ -157,6 +223,34 @@ curl https://api.kokonut.us.kg/health
 
 ## 故障排查
 
+### ⚠️ YouTube Bot Detection 錯誤（最常見）
+
+**症狀**：出現 `ERROR: [youtube] Sign in to confirm you're not a bot`
+
+**解決方法**：
+1. 確認 PO Token Provider 服務正在運行：
+   ```bash
+   curl https://your-pot-provider.onrender.com
+   ```
+   應該返回服務資訊
+
+2. 檢查後端環境變數 `POT_PROVIDER_URL` 是否正確設置
+
+3. 查看後端 logs 確認是否能連接到 PO Token Provider
+
+4. 如果使用免費層，第一次請求可能需要 30-50 秒啟動時間
+
+5. 確認 yt-dlp 版本 >= 2025.05.22（已在 requirements.txt 中指定）
+
+### PO Token Provider 無回應
+
+**症狀**：後端無法連接到 PO Token Provider
+
+**解決方法**：
+1. Render 免費層會在 15 分鐘後休眠，首次請求會較慢
+2. 檢查 Provider 服務的 logs 是否有錯誤
+3. 考慮升級到 $7/月 付費層以保持服務始終運行
+
 ### 前端無法連接到 API
 - 檢查 `.env` 文件中的 `VITE_API_URL`
 - 確保後端 URL 正確
@@ -198,13 +292,26 @@ api.kokonut.us.kg/
 
 ## 成本估計
 
-| 服務 | 層級 | 每月成本 |
-|------|------|--------|
-| Cloudflare Pages | Free | $0 |
-| Cloudflare Workers | Free (100k req/day) | $0 |
-| Render | Free | $0 |
-| 域名 (kokonut.us.kg) | 已有 | $0 |
-| **總計** | | **$0/月** ✅ |
+### 免費方案（有限制）
+| 服務 | 層級 | 每月成本 | 限制 |
+|------|------|--------|------|
+| Cloudflare Pages | Free | $0 | 無限請求 |
+| Cloudflare Workers | Free | $0 | 100k req/day |
+| Render - 後端 API | Free | $0 | 15分鐘後休眠 |
+| Render - PO Token Provider | Free | $0 | 15分鐘後休眠 |
+| 域名 (kokonut.us.kg) | 已有 | $0 | - |
+| **總計** | | **$0/月** | ⚠️ 首次請求慢 |
+
+### 推薦生產方案
+| 服務 | 層級 | 每月成本 | 優勢 |
+|------|------|--------|------|
+| Cloudflare Pages | Free | $0 | 無限請求 |
+| Render - 後端 API | Starter | $7 | 始終運行 |
+| Render - PO Token Provider | Starter | $7 | 始終運行 |
+| 域名 (kokonut.us.kg) | 已有 | $0 | - |
+| **總計** | | **$14/月** | ✅ 穩定可靠 |
+
+**建議**：至少將 PO Token Provider 升級到付費層（$7/月），因為它是關鍵服務，休眠會導致 bot detection 錯誤。
 
 ---
 

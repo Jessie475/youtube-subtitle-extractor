@@ -13,6 +13,7 @@ from datetime import datetime
 from enum import Enum
 import yt_dlp
 import requests
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,7 +75,9 @@ class SubtitleExtractor:
         try:
             logger.info(f"Extracting subtitles from: {url}")
 
-            # Enhanced yt-dlp options to avoid bot detection
+            # Enhanced yt-dlp options to avoid bot detection with PO Token provider
+            pot_provider_url = os.getenv("POT_PROVIDER_URL", "http://localhost:4416")
+
             ydl_opts = {
                 "skip_download": True,
                 "writesubtitles": True,
@@ -85,8 +88,11 @@ class SubtitleExtractor:
                 "socket_timeout": 30,
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["ios", "android"],
+                        "player_client": ["ios", "android", "mweb"],
                         "skip": ["hls", "dash"]
+                    },
+                    "youtubepot-bgutilhttp": {
+                        "base_url": pot_provider_url
                     }
                 }
             }

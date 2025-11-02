@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: youtube-pot-provider
+    runtime: docker
+    dockerfilePath: ./Dockerfile.pot-provider
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 4416

@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # PO Token Provider Service
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-pot-provider
+    init: true
+    ports:
+      - "4416:4416"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4416/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: youtube-subtitle-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - POT_PROVIDER_URL=http://pot-provider:4416
+    depends_on:
+      pot-provider:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./backend/app:/app/app
+
+  # Frontend (if needed for local development)
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: youtube-subtitle-frontend
+  #   ports:
+  #     - "3000:80"
+  #   depends_on:
+  #     - backend
+  #   restart: unless-stopped

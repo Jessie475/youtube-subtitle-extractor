@@ -87,7 +87,7 @@ class SubtitleExtractor:
                 "no_warnings": False,
                 "verbose": True,  # Enable verbose logging to see plugin info
                 "subtitlesformat": "json3",
-                "socket_timeout": 30,
+                "socket_timeout": 120,  # Increased from 30 to 120 to handle Render cold starts
                 # Try web client first (more lenient)
                 "extractor_args": {
                     "youtube": {
@@ -191,30 +191,63 @@ class SubtitleExtractor:
 
 
 def process_subtitle_extraction(task_id: str, url: str, language_preference: Optional[list[str]]):
-    """Background task to extract subtitles"""
-    try:
-        task_store[task_id]["status"] = TaskStatus.PROCESSING
-        task_store[task_id]["progress"] = 25
+    """Background task to extract subtitles with retry logic"""
+    max_retries = 3
+    retry_delay = 10  # seconds
 
-        extractor = SubtitleExtractor()
-        result = asyncio.run(extractor.extract(url, language_preference))
+    for attempt in range(max_retries):
+        try:
+            task_store[task_id]["status"] = TaskStatus.PROCESSING
+            task_store[task_id]["progress"] = 25 + (attempt * 20)  # Progress increases with attempts
 
-        if result["success"]:
-            task_store[task_id]["status"] = TaskStatus.COMPLETED
-            task_store[task_id]["content"] = result["content"]
-            task_store[task_id]["language"] = result["language"]
-            task_store[task_id]["title"] = result["title"]
-            task_store[task_id]["progress"] = 100
-            task_store[task_id]["message"] = f"Successfully extracted subtitles ({result['language']})"
-        else:
-            task_store[task_id]["status"] = TaskStatus.FAILED
-            task_store[task_id]["message"] = result["error"]
-            task_store[task_id]["progress"] = 0
+            if attempt > 0:
+                logger.info(f"Retry attempt {attempt + 1}/{max_retries} for task {task_id}")
+                import time
+                time.sleep(retry_delay)
 
-    except Exception as e:
-        logger.error(f"Task {task_id} failed: {str(e)}")
-        task_store[task_id]["status"] = TaskStatus.FAILED
-        task_store[task_id]["message"] = str(e)
+            extractor = SubtitleExtractor()
+            result = asyncio.run(extractor.extract(url, language_preference))
+
+            if result["success"]:
+                task_store[task_id]["status"] = TaskStatus.COMPLETED
+                task_store[task_id]["content"] = result["content"]
+                task_store[task_id]["language"] = result["language"]
+                task_store[task_id]["title"] = result["title"]
+                task_store[task_id]["progress"] = 100
+                task_store[task_id]["message"] = f"Successfully extracted subtitles ({result['language']})"
+                return  # Success, exit retry loop
+            else:
+                error_msg = result["error"]
+
+                # If it's the last attempt, fail
+                if attempt == max_retries - 1:
+                    task_store[task_id]["status"] = TaskStatus.FAILED
+                    task_store[task_id]["progress"] = 0
+
+                    # Enhanced error messages
+                    if "bot" in error_msg.lower() or "sign in" in error_msg.lower():
+                        task_store[task_id]["message"] = f"YouTube 機器人檢測：{error_msg}。建議等待 5-10 分鐘後重試。"
+                    elif "403" in error_msg or "forbidden" in error_msg.lower():
+                        task_store[task_id]["message"] = f"訪問被拒：{error_msg}。可能是 IP 被暫時限制，請稍後重試。"
+                    elif "no subtitles" in error_msg.lower():
+                        task_store[task_id]["message"] = f"此影片沒有可用的字幕。"
+                    else:
+                        task_store[task_id]["message"] = error_msg
+                    return
+                else:
+                    logger.warning(f"Attempt {attempt + 1} failed: {error_msg}, retrying...")
+
+        except Exception as e:
+            logger.error(f"Task {task_id} attempt {attempt + 1} failed: {str(e)}")
+
+            # If it's the last attempt, fail
+            if attempt == max_retries - 1:
+                task_store[task_id]["status"] = TaskStatus.FAILED
+                task_store[task_id]["progress"] = 0
+                task_store[task_id]["message"] = f"提取失敗（已重試 {max_retries} 次）: {str(e)}"
+                return
+            else:
+                logger.warning(f"Retrying after error: {str(e)}")
 
 
 # API Routes

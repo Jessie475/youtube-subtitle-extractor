@@ -51,7 +51,20 @@ export default function SubtitleExtractor({ apiConnected }) {
       clearInterval(pollIntervalRef.current)
     }
 
+    let pollCount = 0
+    const maxPolls = 60 // Maximum 60 polls (3 seconds * 60 = 3 minutes max)
+
     pollIntervalRef.current = setInterval(async () => {
+      pollCount++
+
+      // Stop polling if exceeded maximum attempts
+      if (pollCount > maxPolls) {
+        clearInterval(pollIntervalRef.current)
+        setError('提取超時，請重試。如果問題持續，可能是服務正在啟動中，請等待 1-2 分鐘後再試。')
+        setLoading(false)
+        return
+      }
+
       try {
         const statusResponse = await axios.get(`${API_BASE_URL}/subtitles/status/${id}`)
         const taskStatus = statusResponse.data.status
@@ -69,9 +82,11 @@ export default function SubtitleExtractor({ apiConnected }) {
           // Enhanced error message with helpful tips
           let enhancedError = errorMessage
           if (errorMessage.includes('bot') || errorMessage.includes('Sign in')) {
-            enhancedError = `${errorMessage}\n\n可能原因：\n• 影片有地區限制或需要登入\n• 影片設有年齡限制\n• 請嘗試其他公開影片`
+            enhancedError = `${errorMessage}\n\n可能原因：\n• 服務 IP 被 YouTube 暫時限制\n• 影片有地區限制或需要登入\n• 影片設有年齡限制\n\n建議：\n• 等待 5-10 分鐘後重試\n• 嘗試其他公開影片`
           } else if (errorMessage.includes('No subtitles')) {
             enhancedError = `${errorMessage}\n\n提示：\n• 該影片可能沒有字幕\n• 確認影片有啟用字幕功能\n• 嘗試有中文或英文字幕的影片`
+          } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+            enhancedError = `${errorMessage}\n\n可能原因：\n• YouTube 檢測到頻繁請求\n• 服務 IP 被暫時封鎖\n\n建議：等待 5-10 分鐘後重試`
           }
 
           setError(enhancedError)
@@ -80,7 +95,7 @@ export default function SubtitleExtractor({ apiConnected }) {
       } catch (err) {
         console.error('Poll error:', err)
       }
-    }, 1000)
+    }, 3000) // Poll every 3 seconds instead of 1 second (reduces requests by 67%)
   }
 
   const fetchResult = async (id) => {

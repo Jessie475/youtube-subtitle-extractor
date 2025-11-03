@@ -8,18 +8,31 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend to Cloudflare Pages
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frontend
 
     steps:
       - uses: actions/checkout@v3
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install dependencies
-        run: npm ci
+        working-directory: ./frontend
+        run: |
+          # Use npm install if npm ci fails (package-lock.json might be outdated)
+          npm ci || npm install
 
       - name: Build
+        working-directory: ./frontend
         run: npm run build
+
+      - name: Verify build output
+        run: |
+          echo "Checking if dist directory exists..."
+          ls -la frontend/dist || echo "Warning: dist directory not found"
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
@@ -39,4 +52,23 @@ jobs:
 
       - name: Deploy to Render
         run: |
-          curl https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID }}?key=${{ secrets.RENDER_API_KEY }} -X POST
+          # Check if secrets are set
+          if [ -z "${{ secrets.RENDER_SERVICE_ID }}" ] || [ -z "${{ secrets.RENDER_API_KEY }}" ]; then
+            echo "⚠️  Warning: Render secrets not set in GitHub"
+            echo "Skipping Render deployment via GitHub Actions"
+            echo "Please enable Auto-Deploy in Render Dashboard instead"
+            echo "Or set RENDER_SERVICE_ID and RENDER_API_KEY secrets in GitHub"
+            exit 0
+          fi
+
+          echo "Triggering Render deployment..."
+          response=$(curl -s -w "\n%{http_code}" https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID }}?key=${{ secrets.RENDER_API_KEY }} -X POST)
+          http_code=$(echo "$response" | tail -n1)
+
+          if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
+            echo "✅ Render deployment triggered successfully"
+          else
+            echo "❌ Render deployment failed with HTTP code: $http_code"
+            echo "Response: $(echo "$response" | head -n-1)"
+            exit 1
+          fi

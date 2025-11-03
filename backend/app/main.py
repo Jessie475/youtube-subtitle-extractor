@@ -21,7 +21,9 @@ from youtube_transcript_api._errors import (
     NoTranscriptFound,
     VideoUnavailable,
     YouTubeRequestFailed,
-    CouldNotRetrieveTranscript
+    CouldNotRetrieveTranscript,
+    RequestBlocked,
+    IpBlocked
 )
 
 # Configure logging
@@ -113,13 +115,17 @@ class SubtitleExtractor:
             # Try YouTube Transcript API first (uses YouTube's InnerTube API)
             try:
                 return await self._extract_with_transcript_api(video_id)
-            except (TranscriptsDisabled, NoTranscriptFound) as e:
-                logger.warning(f"YouTube Transcript API failed: {str(e)}, falling back to yt-dlp")
+            except (TranscriptsDisabled, NoTranscriptFound, RequestBlocked, IpBlocked) as e:
+                # These errors are expected in cloud environments, fallback to yt-dlp
+                error_type = type(e).__name__
+                logger.warning(f"YouTube Transcript API failed ({error_type}), falling back to yt-dlp")
                 # Fallback to yt-dlp
                 return await self._extract_with_ytdlp(url)
             except (VideoUnavailable, YouTubeRequestFailed, CouldNotRetrieveTranscript) as e:
                 logger.error(f"YouTube Transcript API error: {str(e)}")
-                return {"success": False, "error": f"YouTube API 錯誤: {str(e)}"}
+                # Also try yt-dlp as last resort
+                logger.warning("Attempting yt-dlp as fallback...")
+                return await self._extract_with_ytdlp(url)
 
         except Exception as e:
             logger.error(f"Error extracting subtitles: {str(e)}")

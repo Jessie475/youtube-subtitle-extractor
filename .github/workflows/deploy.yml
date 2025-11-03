@@ -41,7 +41,10 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: youtube-subtitle-extractor
           directory: frontend/dist
-          productionBranch: main
+          branch: main
+          # Set commit message to ASCII-only to avoid UTF-8 issues
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '3'
 
   deploy-backend:
     name: Deploy Backend to Render

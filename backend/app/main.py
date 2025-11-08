@@ -15,6 +15,7 @@ import yt_dlp
 import requests
 import os
 import re
+from app.proxy_manager import proxy_manager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -68,7 +69,7 @@ class SubtitleExtractor:
     def __init__(self):
         self.preferred_languages = ["zh-TW", "zh-CN", "zh", "en"]
 
-    async def extract(self, url: str, language_preference: Optional[list[str]] = None) -> dict:
+    async def extract(self, url: str, language_preference: Optional[list[str]] = None, proxy_url: Optional[str] = None) -> dict:
         """Extract subtitles from a YouTube video using yt-dlp"""
         if language_preference:
             self.preferred_languages = language_preference
@@ -94,6 +95,13 @@ class SubtitleExtractor:
                     }
                 },
             }
+
+            # Add proxy if provided
+            if proxy_url:
+                ydl_opts["proxy"] = proxy_url
+                # Hide credentials in log
+                proxy_display = proxy_url.split('@')[1] if '@' in proxy_url else proxy_url
+                logger.info(f"🔀 Using proxy: {proxy_display}")
 
             # Add cookies support if available
             cookie_file = os.getenv("YOUTUBE_COOKIES_FILE")
@@ -185,22 +193,45 @@ class SubtitleExtractor:
 
 
 def process_subtitle_extraction(task_id: str, url: str, language_preference: Optional[list[str]]):
-    """Background task to extract subtitles with retry logic"""
-    max_retries = 3
-    retry_delay = 10  # seconds
+    """Background task to extract subtitles with retry logic and proxy fallback"""
+    import time
 
-    for attempt in range(max_retries):
-        try:
-            task_store[task_id]["status"] = TaskStatus.PROCESSING
-            task_store[task_id]["progress"] = 25 + (attempt * 20)  # Progress increases with attempts
+    extractor = SubtitleExtractor()
+    task_store[task_id]["status"] = TaskStatus.PROCESSING
+    task_store[task_id]["progress"] = 10
 
-            if attempt > 0:
-                logger.info(f"Retry attempt {attempt + 1}/{max_retries} for task {task_id}")
-                import time
-                time.sleep(retry_delay)
+    # Step 1: Try without proxy first
+    logger.info(f"Attempt 1: Extracting without proxy")
+    result = asyncio.run(extractor.extract(url, language_preference, proxy_url=None))
 
-            extractor = SubtitleExtractor()
-            result = asyncio.run(extractor.extract(url, language_preference))
+    if result["success"]:
+        task_store[task_id]["status"] = TaskStatus.COMPLETED
+        task_store[task_id]["content"] = result["content"]
+        task_store[task_id]["language"] = result["language"]
+        task_store[task_id]["title"] = result["title"]
+        task_store[task_id]["progress"] = 100
+        task_store[task_id]["message"] = f"成功提取字幕 ({result['language']})"
+        return
+
+    # Check if error is bot detection related
+    error_msg = result.get("error", "")
+    is_bot_error = "bot" in error_msg.lower() or "sign in" in error_msg.lower()
+
+    # Step 2: If failed and proxy fallback is enabled, try with proxies
+    if is_bot_error and proxy_manager.is_enabled():
+        logger.info("Bot detection error detected, trying with proxy fallback...")
+        task_store[task_id]["progress"] = 30
+
+        # Get 3 proxies to try
+        proxies = proxy_manager.get_multiple_proxies(count=3)
+
+        for i, proxy_url in enumerate(proxies):
+            logger.info(f"Attempt {i + 2}: Trying with proxy {i + 1}/{len(proxies)}")
+            task_store[task_id]["progress"] = 30 + (i * 20)
+
+            time.sleep(5)  # Small delay between attempts
+
+            result = asyncio.run(extractor.extract(url, language_preference, proxy_url=proxy_url))
 
             if result["success"]:
                 task_store[task_id]["status"] = TaskStatus.COMPLETED
@@ -208,40 +239,28 @@ def process_subtitle_extraction(task_id: str, url: str, language_preference: Opt
                 task_store[task_id]["language"] = result["language"]
                 task_store[task_id]["title"] = result["title"]
                 task_store[task_id]["progress"] = 100
-                task_store[task_id]["message"] = f"Successfully extracted subtitles ({result['language']})"
-                return  # Success, exit retry loop
-            else:
-                error_msg = result["error"]
-
-                # If it's the last attempt, fail
-                if attempt == max_retries - 1:
-                    task_store[task_id]["status"] = TaskStatus.FAILED
-                    task_store[task_id]["progress"] = 0
-
-                    # Enhanced error messages
-                    if "bot" in error_msg.lower() or "sign in" in error_msg.lower():
-                        task_store[task_id]["message"] = f"YouTube 機器人檢測：{error_msg}。建議等待 5-10 分鐘後重試。"
-                    elif "403" in error_msg or "forbidden" in error_msg.lower():
-                        task_store[task_id]["message"] = f"訪問被拒：{error_msg}。可能是 IP 被暫時限制，請稍後重試。"
-                    elif "no subtitles" in error_msg.lower():
-                        task_store[task_id]["message"] = f"此影片沒有可用的字幕。"
-                    else:
-                        task_store[task_id]["message"] = error_msg
-                    return
-                else:
-                    logger.warning(f"Attempt {attempt + 1} failed: {error_msg}, retrying...")
-
-        except Exception as e:
-            logger.error(f"Task {task_id} attempt {attempt + 1} failed: {str(e)}")
-
-            # If it's the last attempt, fail
-            if attempt == max_retries - 1:
-                task_store[task_id]["status"] = TaskStatus.FAILED
-                task_store[task_id]["progress"] = 0
-                task_store[task_id]["message"] = f"提取失敗（已重試 {max_retries} 次）: {str(e)}"
+                task_store[task_id]["message"] = f"成功提取字幕 ({result['language']}) [使用代理]"
+                logger.info(f"✅ Success with proxy {i + 1}")
                 return
             else:
-                logger.warning(f"Retrying after error: {str(e)}")
+                logger.warning(f"Proxy {i + 1} failed: {result.get('error', 'Unknown')[:100]}")
+
+    # All attempts failed
+    task_store[task_id]["status"] = TaskStatus.FAILED
+    task_store[task_id]["progress"] = 0
+
+    # Enhanced error messages
+    if is_bot_error:
+        if proxy_manager.is_enabled():
+            task_store[task_id]["message"] = f"YouTube 機器人檢測：即使使用代理也無法繞過。建議等待 5-10 分鐘後重試。"
+        else:
+            task_store[task_id]["message"] = f"YouTube 機器人檢測：{error_msg[:200]}。建議等待 5-10 分鐘後重試。"
+    elif "403" in error_msg or "forbidden" in error_msg.lower():
+        task_store[task_id]["message"] = f"訪問被拒：{error_msg[:200]}。可能是 IP 被暫時限制，請稍後重試。"
+    elif "no subtitles" in error_msg.lower():
+        task_store[task_id]["message"] = f"此影片沒有可用的字幕。"
+    else:
+        task_store[task_id]["message"] = error_msg[:300]
 
 
 # API Routes

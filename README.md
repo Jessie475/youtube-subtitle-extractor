@@ -11,6 +11,7 @@
 - 🎨 現代化的網頁介面
 - ⚡ 使用 yt-dlp + PO Token Provider，穩定可靠
 - 🛡️ 自動繞過 YouTube bot detection
+- 🔄 智能代理備援機制（可選）
 
 ## 系統需求
 
@@ -131,7 +132,8 @@ MIT License
 ### v1.1.0 (2025-11-08)
 - 🎯 簡化為純 yt-dlp + PO Token Provider 架構
 - 🛡️ 整合 bgutil-ytdlp-pot-provider 繞過 YouTube bot detection
-- ✅ 測試證實 100% 成功率（無需代理或 cookies）
+- 🔄 添加智能代理備援機制（Webshare 免費代理支援）
+- ✅ 雙層策略：PO Token → 代理輪換
 - ⚡ 優化配置，提升穩定性和速度
 - 🐛 改善錯誤處理和日誌記錄
 

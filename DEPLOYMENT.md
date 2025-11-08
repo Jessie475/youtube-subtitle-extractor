@@ -242,6 +242,28 @@ curl https://api.kokonut.us.kg/health
 
 5. 確認 yt-dlp 版本 >= 2024.08.06（已在 requirements.txt 中指定）
 
+6. **新增：使用 YouTube Cookies（進階解決方案）**
+
+   如果 PO Token Provider 仍然無法解決問題，可以添加 YouTube cookies：
+
+   **方法 A：使用 Cookie 檔案**
+   1. 在本地瀏覽器登入 YouTube
+   2. 使用瀏覽器擴充功能匯出 cookies（如 "Get cookies.txt LOCALLY"）
+   3. 將 `cookies.txt` 上傳到安全位置（如 Render 的 Persistent Disk 或環境變數）
+   4. 在 Render 環境變數中添加：
+      - **Key**: `YOUTUBE_COOKIES_FILE`
+      - **Value**: `/path/to/cookies.txt`
+
+   **方法 B：在本地開發時使用瀏覽器 Cookies**
+   - 本地開發時，後端會自動嘗試從 Chrome 讀取 cookies
+   - 確保 Chrome 已登入 YouTube
+   - 不需要額外配置
+
+   **注意事項**：
+   - Cookie 檔案包含敏感資訊，請妥善保管
+   - Cookie 可能會過期，需要定期更新
+   - 使用 cookies 違反 YouTube TOS，僅供個人使用
+
 ### PO Token Provider 無回應
 
 **症狀**：後端無法連接到 PO Token Provider

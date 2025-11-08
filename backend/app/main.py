@@ -15,16 +15,6 @@ import yt_dlp
 import requests
 import os
 import re
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import (
-    TranscriptsDisabled,
-    NoTranscriptFound,
-    VideoUnavailable,
-    YouTubeRequestFailed,
-    CouldNotRetrieveTranscript,
-    RequestBlocked,
-    IpBlocked
-)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -73,139 +63,20 @@ class SubtitleResponse(BaseModel):
 
 
 class SubtitleExtractor:
-    """Helper class to extract subtitles from YouTube videos using YouTube Transcript API"""
+    """Helper class to extract subtitles from YouTube videos using yt-dlp"""
 
     def __init__(self):
         self.preferred_languages = ["zh-TW", "zh-CN", "zh", "en"]
 
-    def _extract_video_id(self, url: str) -> Optional[str]:
-        """Extract video ID from YouTube URL"""
-        patterns = [
-            r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)',
-            r'youtube\.com\/embed\/([^&\n?#]+)',
-            r'youtube\.com\/v\/([^&\n?#]+)',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                return match.group(1)
-
-        # If no pattern matches, assume it's already a video ID
-        if len(url) == 11 and re.match(r'^[a-zA-Z0-9_-]+$', url):
-            return url
-
-        return None
-
     async def extract(self, url: str, language_preference: Optional[list[str]] = None) -> dict:
-        """Extract subtitles from a YouTube video using YouTube Transcript API (primary) with yt-dlp fallback"""
+        """Extract subtitles from a YouTube video using yt-dlp"""
         if language_preference:
             self.preferred_languages = language_preference
 
         try:
             logger.info(f"Extracting subtitles from: {url}")
 
-            # Extract video ID from URL
-            video_id = self._extract_video_id(url)
-            if not video_id:
-                return {"success": False, "error": "無法從 URL 中提取影片 ID"}
-
-            logger.info(f"Video ID: {video_id}")
-
-            # Try YouTube Transcript API first (uses YouTube's InnerTube API)
-            try:
-                return await self._extract_with_transcript_api(video_id)
-            except (TranscriptsDisabled, NoTranscriptFound, RequestBlocked, IpBlocked) as e:
-                # These errors are expected in cloud environments, fallback to yt-dlp
-                error_type = type(e).__name__
-                logger.warning(f"YouTube Transcript API failed ({error_type}), falling back to yt-dlp")
-                # Fallback to yt-dlp
-                return await self._extract_with_ytdlp(url)
-            except (VideoUnavailable, YouTubeRequestFailed, CouldNotRetrieveTranscript) as e:
-                logger.error(f"YouTube Transcript API error: {str(e)}")
-                # Also try yt-dlp as last resort
-                logger.warning("Attempting yt-dlp as fallback...")
-                return await self._extract_with_ytdlp(url)
-
-        except Exception as e:
-            logger.error(f"Error extracting subtitles: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    async def _extract_with_transcript_api(self, video_id: str) -> dict:
-        """Extract subtitles using YouTube Transcript API (InnerTube API)"""
-        logger.info("Trying YouTube Transcript API (InnerTube)...")
-
-        # Get list of available transcripts
-        ytt_api = YouTubeTranscriptApi()
-        transcript_list = ytt_api.list(video_id)
-
-        # Try to find transcript in preferred language order
-        transcript = None
-        selected_language = None
-        is_generated = False
-
-        # First try manual transcripts
-        for lang in self.preferred_languages:
-            try:
-                transcript = transcript_list.find_transcript([lang])
-                selected_language = lang
-                is_generated = transcript.is_generated
-                logger.info(f"Found manual transcript in language: {lang}")
-                break
-            except NoTranscriptFound:
-                continue
-
-        # If no manual transcript found, try auto-generated
-        if not transcript:
-            for lang in self.preferred_languages:
-                try:
-                    transcript = transcript_list.find_generated_transcript([lang])
-                    selected_language = lang
-                    is_generated = True
-                    logger.info(f"Found auto-generated transcript in language: {lang}")
-                    break
-                except NoTranscriptFound:
-                    continue
-
-        # If still no transcript, use first available
-        if not transcript:
-            try:
-                # Get first available transcript
-                available_transcripts = list(transcript_list)
-                if available_transcripts:
-                    transcript = available_transcripts[0]
-                    selected_language = transcript.language_code
-                    is_generated = transcript.is_generated
-                    logger.info(f"Using first available transcript: {selected_language}")
-            except Exception as e:
-                raise NoTranscriptFound(video_id, [], str(e))
-
-        if not transcript:
-            raise NoTranscriptFound(video_id, self.preferred_languages, "No transcripts available")
-
-        # Fetch the transcript
-        transcript_data = transcript.fetch()
-
-        # Combine all text segments
-        full_text = "\n".join([entry.text for entry in transcript_data])
-
-        language_label = f"{selected_language} {'(自動生成)' if is_generated else '(手動)'}"
-
-        logger.info(f"Successfully extracted subtitles using YouTube Transcript API: {language_label}")
-
-        return {
-            "success": True,
-            "content": full_text,
-            "language": language_label,
-            "title": f"Video {video_id}",  # Transcript API doesn't provide title
-        }
-
-    async def _extract_with_ytdlp(self, url: str) -> dict:
-        """Fallback: Extract subtitles using yt-dlp"""
-        logger.info("Using yt-dlp fallback method...")
-
-        try:
-            # Enhanced yt-dlp options to avoid bot detection with PO Token provider
+            # Simplified yt-dlp options focused only on subtitle extraction
             pot_provider_url = os.getenv("POT_PROVIDER_URL", "http://localhost:4416")
             logger.info(f"Using PO Token Provider at: {pot_provider_url}")
 
@@ -213,28 +84,15 @@ class SubtitleExtractor:
                 "skip_download": True,
                 "writesubtitles": True,
                 "writeautomaticsub": True,
-                "quiet": False,
-                "no_warnings": False,
-                "verbose": True,  # Enable verbose logging to see plugin info
                 "subtitlesformat": "json3",
-                "socket_timeout": 120,  # Increased from 30 to 120 to handle Render cold starts
-                # Try web client first (more lenient)
+                "socket_timeout": 120,
+                "quiet": True,  # Reduce verbose output
+                "no_warnings": True,
                 "extractor_args": {
-                    "youtube": {
-                        "player_client": ["web", "mweb", "ios"],
-                        "skip": ["hls", "dash"],
-                        "player_skip": ["configs"]
-                    },
                     "youtubepot-bgutilhttp": {
                         "base_url": pot_provider_url
                     }
                 },
-                # Add user agent to appear more like a browser
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                }
             }
 
             # Add cookies support if available
@@ -242,16 +100,8 @@ class SubtitleExtractor:
             if cookie_file and os.path.exists(cookie_file):
                 ydl_opts["cookiefile"] = cookie_file
                 logger.info(f"Using cookie file: {cookie_file}")
-            else:
-                # Try to use browser cookies on local development
-                try:
-                    # This will only work in local environment, not on server
-                    ydl_opts["cookiesfrombrowser"] = ("chrome",)
-                    logger.info("Attempting to use Chrome browser cookies")
-                except Exception as e:
-                    logger.warning(f"Could not access browser cookies: {e}")
 
-            logger.info(f"yt-dlp config: {ydl_opts}")
+            logger.info(f"Extracting with yt-dlp...")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)

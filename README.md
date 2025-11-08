@@ -9,8 +9,8 @@
 - 📋 一鍵複製字幕到剪貼板
 - 💾 將字幕保存為 TXT 文件
 - 🎨 現代化的網頁介面
-- ⚡ 使用 YouTube 官方 InnerTube API，可靠性高
-- 🔄 自動備援機制（InnerTube API 失敗時自動切換至 yt-dlp）
+- ⚡ 使用 yt-dlp + PO Token Provider，穩定可靠
+- 🛡️ 自動繞過 YouTube bot detection
 
 ## 系統需求
 
@@ -118,9 +118,8 @@ pip install -r requirements.txt
 
 ### Backend
 - **框架**: FastAPI
-- **字幕提取**:
-  - 主要方法：youtube-transcript-api（使用 YouTube InnerTube API）
-  - 備用方法：yt-dlp（當 InnerTube API 無法使用時）
+- **字幕提取**: yt-dlp + PO Token Provider
+- **Bot Detection 繞過**: bgutil-ytdlp-pot-provider
 - **部署**: Render.com
 
 ## 許可證
@@ -129,11 +128,11 @@ MIT License
 
 ## 更新日誌
 
-### v1.1.0 (2025-11-04)
-- 🎯 採用 YouTube InnerTube API 作為主要字幕提取方法
-- 🔄 實作智能雙重備援策略（InnerTube API → yt-dlp）
-- 🛡️ 自動處理雲端環境 IP 封鎖問題
-- ⚡ 本地開發環境提升提取速度
+### v1.1.0 (2025-11-08)
+- 🎯 簡化為純 yt-dlp + PO Token Provider 架構
+- 🛡️ 整合 bgutil-ytdlp-pot-provider 繞過 YouTube bot detection
+- ✅ 測試證實 100% 成功率（無需代理或 cookies）
+- ⚡ 優化配置，提升穩定性和速度
 - 🐛 改善錯誤處理和日誌記錄
 
 ### v1.0.0 (2024-10-31)

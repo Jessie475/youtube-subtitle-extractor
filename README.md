@@ -9,9 +9,9 @@
 - 📋 一鍵複製字幕到剪貼板
 - 💾 將字幕保存為 TXT 文件
 - 🎨 現代化的網頁介面
-- ⚡ 使用 yt-dlp + PO Token Provider，穩定可靠
-- 🛡️ 自動繞過 YouTube bot detection
-- 🔄 智能代理備援機制（可選）
+- ⚡ 使用 yt-dlp + PO Token + Webshare 代理，穩定可靠
+- 🛡️ 智能代理輪換繞過 YouTube bot detection
+- 🔄 自動重試機制（最多 5 個代理）
 
 ## 系統需求
 
@@ -130,12 +130,13 @@ MIT License
 ## 更新日誌
 
 ### v1.1.0 (2025-11-08)
-- 🎯 簡化為純 yt-dlp + PO Token Provider 架構
+- 🎯 採用 yt-dlp + PO Token + Webshare 代理架構
 - 🛡️ 整合 bgutil-ytdlp-pot-provider 繞過 YouTube bot detection
-- 🔄 添加智能代理備援機制（Webshare 免費代理支援）
-- ✅ 雙層策略：PO Token → 代理輪換
-- ⚡ 優化配置，提升穩定性和速度
+- 🔄 實作智能代理輪換機制（最多 5 個代理重試）
+- ✅ 移除無代理嘗試，直接使用 Webshare 免費代理
+- ⚡ 優化重試邏輯，提升成功率和速度
 - 🐛 改善錯誤處理和日誌記錄
+- 💰 保持 $0 運營成本（使用 Webshare 免費 10 個代理）
 
 ### v1.0.0 (2024-10-31)
 - 初始版本發佈

@@ -193,74 +193,72 @@ class SubtitleExtractor:
 
 
 def process_subtitle_extraction(task_id: str, url: str, language_preference: Optional[list[str]]):
-    """Background task to extract subtitles with retry logic and proxy fallback"""
+    """Background task to extract subtitles using Webshare proxy rotation"""
     import time
 
     extractor = SubtitleExtractor()
     task_store[task_id]["status"] = TaskStatus.PROCESSING
     task_store[task_id]["progress"] = 10
 
-    # Step 1: Try without proxy first
-    logger.info(f"Attempt 1: Extracting without proxy")
-    result = asyncio.run(extractor.extract(url, language_preference, proxy_url=None))
-
-    if result["success"]:
-        task_store[task_id]["status"] = TaskStatus.COMPLETED
-        task_store[task_id]["content"] = result["content"]
-        task_store[task_id]["language"] = result["language"]
-        task_store[task_id]["title"] = result["title"]
-        task_store[task_id]["progress"] = 100
-        task_store[task_id]["message"] = f"成功提取字幕 ({result['language']})"
+    # Check if proxy is enabled
+    if not proxy_manager.is_enabled():
+        logger.error("Proxy is not enabled. Cannot extract subtitles without proxy in production.")
+        task_store[task_id]["status"] = TaskStatus.FAILED
+        task_store[task_id]["progress"] = 0
+        task_store[task_id]["message"] = "代理服務未啟用，無法提取字幕。請聯繫管理員。"
         return
 
-    # Check if error is bot detection related
-    error_msg = result.get("error", "")
-    is_bot_error = "bot" in error_msg.lower() or "sign in" in error_msg.lower()
+    # Get proxies for rotation (try up to 5 proxies)
+    proxies = proxy_manager.get_multiple_proxies(count=5)
 
-    # Step 2: If failed and proxy fallback is enabled, try with proxies
-    if is_bot_error and proxy_manager.is_enabled():
-        logger.info("Bot detection error detected, trying with proxy fallback...")
-        task_store[task_id]["progress"] = 30
+    if not proxies:
+        logger.error("No proxies available")
+        task_store[task_id]["status"] = TaskStatus.FAILED
+        task_store[task_id]["progress"] = 0
+        task_store[task_id]["message"] = "沒有可用的代理服務。請聯繫管理員。"
+        return
 
-        # Get 3 proxies to try
-        proxies = proxy_manager.get_multiple_proxies(count=3)
+    logger.info(f"Starting extraction with {len(proxies)} proxies")
 
-        for i, proxy_url in enumerate(proxies):
-            logger.info(f"Attempt {i + 2}: Trying with proxy {i + 1}/{len(proxies)}")
-            task_store[task_id]["progress"] = 30 + (i * 20)
+    # Try each proxy until success
+    for i, proxy_url in enumerate(proxies):
+        logger.info(f"Attempt {i + 1}/{len(proxies)}: Using proxy {i + 1}")
+        task_store[task_id]["progress"] = 20 + (i * 15)
 
-            time.sleep(5)  # Small delay between attempts
+        if i > 0:
+            time.sleep(3)  # Small delay between attempts
 
-            result = asyncio.run(extractor.extract(url, language_preference, proxy_url=proxy_url))
+        result = asyncio.run(extractor.extract(url, language_preference, proxy_url=proxy_url))
 
-            if result["success"]:
-                task_store[task_id]["status"] = TaskStatus.COMPLETED
-                task_store[task_id]["content"] = result["content"]
-                task_store[task_id]["language"] = result["language"]
-                task_store[task_id]["title"] = result["title"]
-                task_store[task_id]["progress"] = 100
-                task_store[task_id]["message"] = f"成功提取字幕 ({result['language']}) [使用代理]"
-                logger.info(f"✅ Success with proxy {i + 1}")
-                return
-            else:
-                logger.warning(f"Proxy {i + 1} failed: {result.get('error', 'Unknown')[:100]}")
+        if result["success"]:
+            task_store[task_id]["status"] = TaskStatus.COMPLETED
+            task_store[task_id]["content"] = result["content"]
+            task_store[task_id]["language"] = result["language"]
+            task_store[task_id]["title"] = result["title"]
+            task_store[task_id]["progress"] = 100
+            task_store[task_id]["message"] = f"成功提取字幕 ({result['language']})"
+            logger.info(f"✅ Success with proxy {i + 1}/{len(proxies)}")
+            return
+        else:
+            error_msg = result.get('error', 'Unknown')
+            logger.warning(f"Proxy {i + 1} failed: {error_msg[:100]}")
 
-    # All attempts failed
+    # All proxies failed
     task_store[task_id]["status"] = TaskStatus.FAILED
     task_store[task_id]["progress"] = 0
 
+    # Get last error message
+    error_msg = result.get("error", "Unknown error")
+
     # Enhanced error messages
-    if is_bot_error:
-        if proxy_manager.is_enabled():
-            task_store[task_id]["message"] = f"YouTube 機器人檢測：即使使用代理也無法繞過。建議等待 5-10 分鐘後重試。"
-        else:
-            task_store[task_id]["message"] = f"YouTube 機器人檢測：{error_msg[:200]}。建議等待 5-10 分鐘後重試。"
+    if "bot" in error_msg.lower() or "sign in" in error_msg.lower():
+        task_store[task_id]["message"] = f"YouTube 機器人檢測：所有代理都被封鎖。建議等待 5-10 分鐘後重試。"
     elif "403" in error_msg or "forbidden" in error_msg.lower():
-        task_store[task_id]["message"] = f"訪問被拒：{error_msg[:200]}。可能是 IP 被暫時限制，請稍後重試。"
+        task_store[task_id]["message"] = f"訪問被拒：{error_msg[:200]}。所有代理都無法訪問，請稍後重試。"
     elif "no subtitles" in error_msg.lower():
         task_store[task_id]["message"] = f"此影片沒有可用的字幕。"
     else:
-        task_store[task_id]["message"] = error_msg[:300]
+        task_store[task_id]["message"] = f"提取失敗（已嘗試 {len(proxies)} 個代理）: {error_msg[:200]}"
 
 
 # API Routes
